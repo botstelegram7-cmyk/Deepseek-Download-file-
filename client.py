@@ -1,0 +1,12 @@
+from pyrogram import Client
+from config import API_ID, API_HASH, BOT_TOKEN
+
+# Shared client with in_memory=True (no session file)
+app = Client(
+    "SerenaBot",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=BOT_TOKEN,
+    in_memory=True,  # critical for Render
+    plugins=dict(root="plugins")  # auto-load plugins from folder
+)
