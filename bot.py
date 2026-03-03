@@ -2,85 +2,106 @@
 import asyncio
 import sys
 import os
-import time
+import logging
+import signal
 from pyrogram.errors import FloodWait
 from client import app
 from database import init_db
 from web.app import start_flask
 from utils.helpers import YT_COOKIES_FILE, INSTA_COOKIES_FILE, TERABOX_COOKIES_FILE
-import logging
 
-logging.basicConfig(level=logging.INFO)
+# Set detailed logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logging.getLogger("pyrogram").setLevel(logging.DEBUG)
+logging.getLogger("werkzeug").setLevel(logging.INFO)
 
 # Initial delay before first connection attempt (seconds)
-# Helps prevent flood if bot restarts frequently
 INITIAL_DELAY = 10
 
-# Ensure cookies are written at startup (already done in helpers.py on import)
-print("⚡ Serena Downloader Bot starting...")
-print("╔════════════════════════════╗")
-print("║   Serena Downloader Bot    ║")
-print("║        ⋆｡°✮°｡⋆            ║")
-print("╚════════════════════════════╝")
-if YT_COOKIES_FILE:
-    print(f"[COOKIES] YT_COOKIES -> wrote {YT_COOKIES_FILE}")
-if INSTA_COOKIES_FILE:
-    print(f"[COOKIES] INSTAGRAM_COOKIES -> wrote {INSTA_COOKIES_FILE}")
-if TERABOX_COOKIES_FILE:
-    print(f"[COOKIES] TERABOX_COOKIES -> wrote {TERABOX_COOKIES_FILE}")
+# Global flag to keep bot running
+running = True
+
+def signal_handler():
+    """Handle shutdown signals gracefully"""
+    global running
+    logging.info("Shutdown signal received, stopping bot...")
+    running = False
 
 async def start_bot_with_retry():
     """Start bot with initial delay and retry on FloodWait"""
     # Wait initial delay to avoid rapid restarts
-    print(f"⏳ Waiting {INITIAL_DELAY} seconds before connecting to Telegram...")
+    logging.info(f"⏳ Waiting {INITIAL_DELAY} seconds before connecting to Telegram...")
     await asyncio.sleep(INITIAL_DELAY)
 
     retries = 5
     base_wait = 10
     for attempt in range(1, retries + 1):
         try:
-            print(f"»»──── [ Attempt {attempt} to start bot ] ────««")
+            logging.info(f"»»──── [ Attempt {attempt} to start bot ] ────««")
             await app.start()
-            print("✅ Bot started successfully.")
+            logging.info("✅ Bot started successfully.")
+            # Verify connection
+            me = await app.get_me()
+            logging.info(f"Logged in as: {me.first_name} (@{me.username})")
             return True
         except FloodWait as e:
-            wait_time = e.value  # seconds
-            print(f"⚠️ FloodWait: need to wait {wait_time} seconds.")
+            wait_time = e.value
+            logging.warning(f"⚠️ FloodWait: need to wait {wait_time} seconds.")
             if attempt < retries:
-                print(f"Retrying after {wait_time} seconds...")
+                logging.info(f"Retrying after {wait_time} seconds...")
                 await asyncio.sleep(wait_time)
             else:
-                print("❌ Max retries reached. Exiting.")
+                logging.error("❌ Max retries reached. Exiting.")
                 return False
         except Exception as e:
-            print(f"❌ Unexpected error during start: {e}")
+            logging.error(f"❌ Unexpected error during start: {e}", exc_info=True)
             if attempt < retries:
                 wait = base_wait * attempt
-                print(f"Retrying in {wait} seconds...")
+                logging.info(f"Retrying in {wait} seconds...")
                 await asyncio.sleep(wait)
             else:
-                print("❌ Max retries reached. Exiting.")
+                logging.error("❌ Max retries reached. Exiting.")
                 return False
     return False
 
 async def main():
+    # Set up signal handlers for graceful shutdown
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, signal_handler)
+
     # Initialize database
     await init_db()
-    # Start Flask (keep-alive)
+    logging.info("Database initialized.")
+
+    # Start Flask (keep-alive) in a separate thread
     start_flask()
-    print("»»──── [ Starting Bot ] ────««")
+    logging.info("Flask keep-alive server started.")
+
+    logging.info("»»──── [ Starting Bot ] ────««")
     success = await start_bot_with_retry()
     if not success:
-        print("❌ Could not start bot. Exiting.")
+        logging.error("❌ Could not start bot. Exiting.")
         sys.exit(1)
-    # Keep running
+
+    logging.info("✅ Bot is now running and waiting for updates...")
+
+    # Keep the bot alive indefinitely
     try:
-        while True:
-            await asyncio.sleep(3600)
-    except KeyboardInterrupt:
+        while running:
+            await asyncio.sleep(1)  # short sleep to remain responsive to signals
+    except asyncio.CancelledError:
         pass
     finally:
+        logging.info("Stopping bot...")
         await app.stop()
+        logging.info("Bot stopped.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logging.info("Keyboard interrupt received.")
