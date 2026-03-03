@@ -2,6 +2,8 @@
 import asyncio
 import sys
 import os
+import time
+from pyrogram.errors import FloodWait
 from client import app
 from database import init_db
 from web.app import start_flask
@@ -9,6 +11,10 @@ from utils.helpers import YT_COOKIES_FILE, INSTA_COOKIES_FILE, TERABOX_COOKIES_F
 import logging
 
 logging.basicConfig(level=logging.INFO)
+
+# Initial delay before first connection attempt (seconds)
+# Helps prevent flood if bot restarts frequently
+INITIAL_DELAY = 10
 
 # Ensure cookies are written at startup (already done in helpers.py on import)
 print("⚡ Serena Downloader Bot starting...")
@@ -23,18 +29,50 @@ if INSTA_COOKIES_FILE:
 if TERABOX_COOKIES_FILE:
     print(f"[COOKIES] TERABOX_COOKIES -> wrote {TERABOX_COOKIES_FILE}")
 
+async def start_bot_with_retry():
+    """Start bot with initial delay and retry on FloodWait"""
+    # Wait initial delay to avoid rapid restarts
+    print(f"⏳ Waiting {INITIAL_DELAY} seconds before connecting to Telegram...")
+    await asyncio.sleep(INITIAL_DELAY)
+
+    retries = 5
+    base_wait = 10
+    for attempt in range(1, retries + 1):
+        try:
+            print(f"»»──── [ Attempt {attempt} to start bot ] ────««")
+            await app.start()
+            print("✅ Bot started successfully.")
+            return True
+        except FloodWait as e:
+            wait_time = e.value  # seconds
+            print(f"⚠️ FloodWait: need to wait {wait_time} seconds.")
+            if attempt < retries:
+                print(f"Retrying after {wait_time} seconds...")
+                await asyncio.sleep(wait_time)
+            else:
+                print("❌ Max retries reached. Exiting.")
+                return False
+        except Exception as e:
+            print(f"❌ Unexpected error during start: {e}")
+            if attempt < retries:
+                wait = base_wait * attempt
+                print(f"Retrying in {wait} seconds...")
+                await asyncio.sleep(wait)
+            else:
+                print("❌ Max retries reached. Exiting.")
+                return False
+    return False
+
 async def main():
     # Initialize database
     await init_db()
     # Start Flask (keep-alive)
     start_flask()
-    # Import plugins AFTER flask start but BEFORE app.start()
-    # (they are already imported via plugins=root in client, but we need to ensure they are registered)
-    # Actually, client.py already sets plugins=dict(root="plugins"), so they will be auto-loaded when app.start() is called.
-    # We just need to start the bot.
     print("»»──── [ Starting Bot ] ────««")
-    await app.start()
-    print("✅ Bot is running. Press Ctrl+C to stop.")
+    success = await start_bot_with_retry()
+    if not success:
+        print("❌ Could not start bot. Exiting.")
+        sys.exit(1)
     # Keep running
     try:
         while True:
