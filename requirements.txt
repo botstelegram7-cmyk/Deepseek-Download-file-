@@ -1,0 +1,10 @@
+pyrogram==2.0.106
+TgCrypto
+yt-dlp
+aiohttp
+gdown
+aiosqlite
+Pillow
+PyMuPDF
+flask
+python-dotenv
