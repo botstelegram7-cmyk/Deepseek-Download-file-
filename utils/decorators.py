@@ -1,8 +1,7 @@
 from functools import wraps
-from pyrogram.types import Message
-from pyrogram.enums import ChatMemberStatus
-from database import get_user, create_user, get_daily_count, get_plan_limit
-from utils.helpers import is_subscribed, is_owner
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from database import get_user, create_user, get_daily_count
+from utils.helpers import is_subscribed, is_owner, get_plan_limit
 from config import OWNER_IDS, FSUB_LINK
 import asyncio
 
@@ -38,10 +37,10 @@ def guard(func):
             )
             return
 
-        # Daily limit check (except for premium/owner)
+        # Daily limit check
         daily = await get_daily_count(user_id)
         limit = get_plan_limit(user["plan"])
-        if daily >= limit and user["plan"] != "premium":  # premium unlimited? we set high limit anyway
+        if daily >= limit and user["plan"] != "premium":  # premium has high limit
             await message.reply_text(
                 f"**❌ Daily download limit exceeded!**\n"
                 f"You have used {daily}/{limit} downloads today.\n"
