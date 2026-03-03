@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: serena-downloader-bot
+    env: docker
+    repo: https://github.com/yourusername/serena-bot
+    branch: main
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: API_ID
+        sync: false
+      - key: API_HASH
+        sync: false
+      - key: OWNER_IDS
+        value: "1598576202"
+      - key: OWNER_USERNAME
+        value: "Xioqui_Xan"
+      - key: SUPPORT_USERNAME
+        value: "TechnicalSerena"
+      - key: FSUB_LINK
+        value: "https://t.me/TechnicalSerena"
+      - key: FREE_LIMIT
+        value: "3"
+      - key: BASIC_LIMIT
+        value: "15"
+      - key: PREMIUM_LIMIT
+        value: "50"
+      - key: DB_PATH
+        value: "/tmp/serena_db/bot.db"
+      - key: DL_DIR
+        value: "/tmp/serena_dl"
+    healthCheckPath: /health
