@@ -13,10 +13,10 @@ from utils.helpers import YT_COOKIES_FILE, INSTA_COOKIES_FILE, TERABOX_COOKIES_F
 
 # Set detailed logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logging.getLogger("pyrogram").setLevel(logging.DEBUG)
+logging.getLogger("pyrogram").setLevel(logging.INFO)
 logging.getLogger("werkzeug").setLevel(logging.INFO)
 
 # Initial delay before first connection attempt (seconds)
@@ -24,8 +24,6 @@ INITIAL_DELAY = 10
 
 # Global flag to keep bot running
 running = True
-# Global flag to prevent multiple start attempts
-_starting = False
 
 def signal_handler():
     """Handle shutdown signals gracefully"""
@@ -33,72 +31,48 @@ def signal_handler():
     logging.info("Shutdown signal received, stopping bot...")
     running = False
 
-async def start_bot_with_retry():
-    """Start bot with initial delay and retry on FloodWait, handling already-connected case"""
-    global _starting
-    if _starting:
-        logging.warning("Start already in progress, skipping...")
-        return True
-    _starting = True
-
+async def start_bot_once():
+    """Start the bot once, handling FloodWait and already-connected cases."""
     # Wait initial delay to avoid rapid restarts
     logging.info(f"⏳ Waiting {INITIAL_DELAY} seconds before connecting to Telegram...")
     await asyncio.sleep(INITIAL_DELAY)
 
-    # If already connected, just return success
+    # Check if already connected
     if app.is_connected:
-        logging.info("Client already connected, skipping start.")
-        _starting = False
+        logging.info("Client already connected.")
         return True
 
-    retries = 5
-    base_wait = 10
-    for attempt in range(1, retries + 1):
+    try:
+        logging.info("»»──── [ Starting Bot ] ────««")
+        await app.start()
+        logging.info("✅ Bot started successfully.")
+        # Verify connection
+        me = await app.get_me()
+        logging.info(f"Logged in as: {me.first_name} (@{me.username})")
+        return True
+    except FloodWait as e:
+        wait_time = e.value
+        logging.warning(f"⚠️ FloodWait: need to wait {wait_time} seconds.")
+        logging.info(f"Will retry after {wait_time} seconds...")
+        await asyncio.sleep(wait_time)
+        # Retry once after flood wait
         try:
-            logging.info(f"»»──── [ Attempt {attempt} to start bot ] ────««")
             await app.start()
-            logging.info("✅ Bot started successfully.")
-            # Verify connection
-            me = await app.get_me()
-            logging.info(f"Logged in as: {me.first_name} (@{me.username})")
-            _starting = False
+            logging.info("✅ Bot started successfully after flood wait.")
             return True
-        except FloodWait as e:
-            wait_time = e.value
-            logging.warning(f"⚠️ FloodWait: need to wait {wait_time} seconds.")
-            if attempt < retries:
-                logging.info(f"Retrying after {wait_time} seconds...")
-                await asyncio.sleep(wait_time)
-            else:
-                logging.error("❌ Max retries reached. Exiting.")
-                _starting = False
-                return False
-        except ConnectionError as e:
-            if "already connected" in str(e).lower():
-                logging.info("Client already connected (detected during start attempt). Treating as success.")
-                _starting = False
-                return True
-            else:
-                logging.error(f"❌ Connection error: {e}")
-                if attempt < retries:
-                    wait = base_wait * attempt
-                    logging.info(f"Retrying in {wait} seconds...")
-                    await asyncio.sleep(wait)
-                else:
-                    _starting = False
-                    return False
-        except Exception as e:
-            logging.error(f"❌ Unexpected error during start: {e}", exc_info=True)
-            if attempt < retries:
-                wait = base_wait * attempt
-                logging.info(f"Retrying in {wait} seconds...")
-                await asyncio.sleep(wait)
-            else:
-                logging.error("❌ Max retries reached. Exiting.")
-                _starting = False
-                return False
-    _starting = False
-    return False
+        except Exception as e2:
+            logging.error(f"❌ Failed to start after flood wait: {e2}", exc_info=True)
+            return False
+    except ConnectionError as e:
+        if "already connected" in str(e).lower():
+            logging.info("Client is already connected (start skipped).")
+            return True
+        else:
+            logging.error(f"❌ Connection error: {e}")
+            return False
+    except Exception as e:
+        logging.error(f"❌ Unexpected error during start: {e}", exc_info=True)
+        return False
 
 async def main():
     # Set up signal handlers for graceful shutdown
@@ -114,8 +88,8 @@ async def main():
     start_flask()
     logging.info("Flask keep-alive server started.")
 
-    logging.info("»»──── [ Starting Bot ] ────««")
-    success = await start_bot_with_retry()
+    # Start bot
+    success = await start_bot_once()
     if not success:
         logging.error("❌ Could not start bot. Exiting.")
         sys.exit(1)
