@@ -4,6 +4,7 @@ import sys
 import os
 import logging
 import signal
+import random
 from pyrogram.errors import FloodWait
 from pyrogram import Client
 from client import app
@@ -19,8 +20,8 @@ logging.basicConfig(
 logging.getLogger("pyrogram").setLevel(logging.INFO)
 logging.getLogger("werkzeug").setLevel(logging.INFO)
 
-# Initial delay before first connection attempt (seconds)
-INITIAL_DELAY = 10
+# Initial delay with jitter (30-60 seconds)
+INITIAL_DELAY = random.randint(30, 60)
 
 # Global flag to keep bot running
 running = True
@@ -32,7 +33,7 @@ def signal_handler():
     running = False
 
 async def start_bot_once():
-    """Start the bot once, handling FloodWait and already-connected cases."""
+    """Start the bot once, handling FloodWait gracefully."""
     # Wait initial delay to avoid rapid restarts
     logging.info(f"⏳ Waiting {INITIAL_DELAY} seconds before connecting to Telegram...")
     await asyncio.sleep(INITIAL_DELAY)
@@ -53,7 +54,7 @@ async def start_bot_once():
     except FloodWait as e:
         wait_time = e.value
         logging.warning(f"⚠️ FloodWait: need to wait {wait_time} seconds.")
-        logging.info(f"Will retry after {wait_time} seconds...")
+        logging.info(f"Will retry after {wait_time} seconds. Bot will be unresponsive during this time.")
         await asyncio.sleep(wait_time)
         # Retry once after flood wait
         try:
