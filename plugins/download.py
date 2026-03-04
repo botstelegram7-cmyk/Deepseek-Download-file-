@@ -1,17 +1,18 @@
 import os
 import asyncio
+import time
+import aiofiles
 from pyrogram import filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from client import app
-from database import increment_daily, add_download, get_user, get_daily_count, get_plan_limit
+from database import increment_daily, add_download, get_user, get_daily_count
+from utils.helpers import get_plan_limit, is_url, extract_urls_from_text, get_download_path, cleanup_user_dir, fmt_size, is_owner
 from utils.decorators import guard
-from utils.helpers import is_url, extract_urls_from_text, get_download_path, cleanup_user_dir, fmt_size, is_owner
-from downloader.core import download_direct, download_ytdlp, download_gdrive, download_m3u8, download_terabox_fallback
+from utils.progress import upload_progress
+from downloader.core import download_direct, download_ytdlp, download_gdrive, download_m3u8
 from downloader.media import remux_to_mp4, add_metadata, video_thumb, pdf_thumb, build_caption
 from queue_manager import queue_manager
 from config import LOG_CHANNEL, DL_DIR, MAX_FILE_SIZE
-import time
-import aiofiles
 
 URL_PATTERN = filters.regex(r"https?://[^\s]+")
 
@@ -230,7 +231,3 @@ async def download_task(msg: Message, url: str, audio_only: bool, status_msg: Me
 async def delayed_cleanup(user_id, delay):
     await asyncio.sleep(delay)
     cleanup_user_dir(user_id)
-
-async def upload_progress(current, total, message, start_time):
-    from utils.progress import upload_progress as up
-    await up(current, total, message, start_time)
